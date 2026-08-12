@@ -35,6 +35,7 @@ export enum FeatureFlag {
   // Note: This flag gates security risks and should not be turned on without
   // changes to the underlying experience
   EnableBasicAuthResponse = "enable-basic-auth-response",
+  InlineMenuTypedSearch = "inline-menu-typed-search",
 
   /* Desktop Native */
   MacOsNativeCredentialSync = "macos-native-credential-sync",
@@ -155,6 +156,7 @@ export const DefaultFeatureFlagValue = {
   [FeatureFlag.UseUndeterminedCipherScenarioTriggeringLogic]: FALSE,
   [FeatureFlag.DefaultPasswordManagerPrompt]: FALSE,
   [FeatureFlag.LitInlineMenuComponents]: FALSE,
+  [FeatureFlag.InlineMenuTypedSearch]: FALSE,
   [FeatureFlag.PM31039ItemActionInExtension]: FALSE,
   [FeatureFlag.EnableBasicAuthResponse]: FALSE,
 
