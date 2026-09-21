@@ -6,17 +6,20 @@ upstream features and fixes.
 
 ## Repository Layout
 
-| Remote     | URL                                             | Purpose                          |
-| ---------- | ----------------------------------------------- | -------------------------------- |
+| Remote     | URL                                                 | Purpose                          |
+| ---------- | --------------------------------------------------- | -------------------------------- |
 | `origin`   | `git@github.com:muneeshpandi/bitwarden-clients.git` | Your fork (backup of your work)  |
-| `upstream` | `https://github.com/bitwarden/clients.git`      | Official Bitwarden repo (source) |
+| `upstream` | `https://github.com/bitwarden/clients.git`          | Official Bitwarden repo (source) |
 
-| Branch                  | Purpose                                            |
-| ----------------------- | -------------------------------------------------- |
-| `main`                  | Mirror of upstream `main` (kept clean, no edits)   |
-| `devopsminds/production`| Your working branch with all your local changes    |
+| Branch                   | Purpose                                          |
+| ------------------------ | ------------------------------------------------ |
+| `main`                   | Mirror of upstream `main` (kept clean, no edits) |
+| `devopsminds/production` | Your working branch with all your local changes  |
 
-**Prerequisites (from `package.json`):** Node `>=24.17.0`, npm `~11`.
+**Prerequisites:** Node `>=24.17.0` and npm `~11` (`engines` in the root `package.json`).
+`.nvmrc` pins `v24` and is the source of truth — CI reads it directly, so run `nvm use`
+before any npm command. A Node below 24.17.0 fails the `engines` check and produces
+confusing install and build errors.
 
 ---
 
@@ -105,7 +108,12 @@ which is much safer than a plain `--force`.
 
 ## Build After Syncing
 
+Always switch Node first. `.nvmrc` pins `v24` and CI reads the same file, so `nvm use`
+keeps local builds aligned with CI.
+
 ```bash
+nvm use          # reads .nvmrc -> Node 24
+
 # Clean install to match the refreshed lockfile from upstream
 npm ci
 
@@ -120,11 +128,13 @@ npm test
 Then build/run the client you need (each app has its own scripts under `apps/*`), e.g.:
 
 ```bash
+nvm use
+
 # Web
 npm run build --workspace @bitwarden/web-vault
 
-# Browser extension
-npm run build --workspace @bitwarden/browser
+# Browser extension — Firefox (this fork's target)
+npm run build:firefox --workspace @bitwarden/browser
 
 # Desktop
 npm run build --workspace @bitwarden/desktop
@@ -132,6 +142,47 @@ npm run build --workspace @bitwarden/desktop
 # CLI
 npm run build --workspace @bitwarden/cli
 ```
+
+> **Firefox is not the default.** In `apps/browser/package.json`, the bare `build` script
+> aliases `build:chrome`, so `npm run build --workspace @bitwarden/browser` produces a
+> Chrome MV3 bundle. Name the Firefox script explicitly every time.
+
+### Firefox browser extension scripts
+
+Run these from the repo root with `--workspace @bitwarden/browser`, or from
+`apps/browser` without the workspace flag.
+
+| Goal                       | Script                    | Notes                                             |
+| -------------------------- | ------------------------- | ------------------------------------------------- |
+| Dev build                  | `build:firefox`           | MV2; unpacked output in `apps/browser/build/`     |
+| Dev build, rebuild on save | `build:watch:firefox`     | MV2 watch mode                                    |
+| Dev build, MV3             | `build:watch:firefox:mv3` | Sets `MANIFEST_VERSION=3`                         |
+| Production build           | `build:prod:firefox`      | Sets `NODE_ENV=production`                        |
+| Packaged zip               | `dist:firefox`            | Prod build + `apps/browser/dist/dist-firefox.zip` |
+| Packaged zip, MV3          | `dist:firefox:mv3`        | Prod build + MV3 manifest                         |
+
+`webpack.base.js` defaults to manifest v2 unless `MANIFEST_VERSION=3` is set, and it
+defaults `BROWSER` to `chrome` when unset — so both variables matter.
+
+```bash
+nvm use
+
+# One-off Firefox build
+npm run build:firefox --workspace @bitwarden/browser
+
+# Iterating: rebuild on every file change
+npm run build:watch:firefox --workspace @bitwarden/browser
+
+# Shippable zip
+npm run dist:firefox --workspace @bitwarden/browser
+```
+
+Load the result in Firefox via `about:debugging` → This Firefox → Load Temporary Add-on,
+then pick `apps/browser/build/manifest.json`.
+
+The commercial (`bit-`) variants exist for each of the above — `build:bit:firefox`,
+`build:bit:watch:firefox`, `build:bit:prod:firefox`, `dist:bit:firefox` — and build with
+`bitwarden_license/bit-browser/webpack.config.js`.
 
 > Check the individual `apps/<client>/package.json` for the exact `build`, `build:prod`,
 > and `dev`/`watch` script names for the client you are targeting.
@@ -146,7 +197,9 @@ git checkout main && git merge --ff-only upstream/main && git push origin main
 git checkout devopsminds/production
 git rebase upstream/main
 git push --force-with-lease origin devopsminds/production
+nvm use
 npm ci && npm run lint && npm test
+npm run build:firefox --workspace @bitwarden/browser
 ```
 
 ---
@@ -183,4 +236,13 @@ Merge never rewrites history and never force-pushes, at the cost of merge commit
   or maintain them as a separate patch/feature set to reduce overlap with upstream.
 - **`npm ci` errors after sync:** upstream changed dependencies. Run `npm install` to
   regenerate `package-lock.json`, then commit the updated lockfile.
+- **Install or build fails in a confusing way:** check `node -v` before blaming the code.
+  Several Node versions are installed via nvm on this machine, so run `nvm use` (or
+  `nvm install 24.17.0 && nvm use 24.17.0` if the patch matters) and retry.
+- **Build came out as Chrome instead of Firefox:** you ran the bare `build` script, which
+  aliases `build:chrome`. Use `build:firefox` — see
+  [Firefox browser extension scripts](#firefox-browser-extension-scripts).
+
+```
+
 ```
