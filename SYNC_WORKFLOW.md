@@ -6,10 +6,21 @@ upstream features and fixes.
 
 ## Repository Layout
 
-| Remote     | URL                                                 | Purpose                          |
-| ---------- | --------------------------------------------------- | -------------------------------- |
-| `origin`   | `git@github.com:muneeshpandi/bitwarden-clients.git` | Your fork (backup of your work)  |
-| `upstream` | `https://github.com/bitwarden/clients.git`          | Official Bitwarden repo (source) |
+| Remote     | URL                                         | Purpose                          |
+| ---------- | ------------------------------------------- | -------------------------------- |
+| `origin`   | `git@github.com:muneeshpandi/bitwarden.git` | Your fork (backup of your work)  |
+| `upstream` | `https://github.com/bitwarden/clients.git`  | Official Bitwarden repo (source) |
+
+> **Fork renamed.** The fork is now `muneeshpandi/bitwarden`; it was previously
+> `muneeshpandi/bitwarden-clients`. GitHub redirects the old URL, so existing clones keep
+> working, but point `origin` at the new name to avoid surprises:
+>
+> ```bash
+> git remote set-url origin git@github.com:muneeshpandi/bitwarden.git
+> git remote -v   # confirm
+> ```
+>
+> The upstream repo is unaffected — it stays `bitwarden/clients`.
 
 | Branch                   | Purpose                                          |
 | ------------------------ | ------------------------------------------------ |
