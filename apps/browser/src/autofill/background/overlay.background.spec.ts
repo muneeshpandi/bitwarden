@@ -77,6 +77,7 @@ import {
   triggerPortOnConnectEvent,
   triggerPortOnDisconnectEvent,
   triggerPortOnMessageEvent,
+  triggerTabOnRemovedEvent,
   triggerWebNavigationOnCommittedEvent,
   triggerWebRequestOnCompletedEvent,
 } from "../spec/testing-utils";
@@ -4685,6 +4686,124 @@ describe("OverlayBackground", () => {
           "targeted_field_0_newPassword_1",
         ]);
       });
+    });
+  });
+
+  describe("restricting verification code ciphers to the filled cipher", () => {
+    const totpTabId = 7;
+    const totpCipherA = mock<CipherView>({
+      id: "cipher-a",
+      type: CipherType.Login,
+      login: { username: "muneesh", totp: "otpauth://totp/a" },
+    });
+    const totpCipherB = mock<CipherView>({
+      id: "cipher-b",
+      type: CipherType.Login,
+      login: { username: "Muneesh", totp: "otpauth://totp/b" },
+    });
+    const cipherWithoutTotp = mock<CipherView>({
+      id: "cipher-c",
+      type: CipherType.Login,
+      login: { username: "no-totp", totp: undefined },
+    });
+
+    const buildCipherEntries = (...ciphers: CipherView[]): [string, CipherView][] =>
+      ciphers.map((cipher, index) => [`inline-menu-cipher-${index}`, cipher]);
+
+    const focusTotpField = (isTotpField: boolean) => {
+      overlayBackground["focusedFieldData"] = createFocusedFieldDataMock({
+        tabId: totpTabId,
+        inlineMenuFillType: CipherType.Login,
+        accountCreationFieldType: InlineMenuAccountCreationFieldType.Totp,
+      });
+      jest
+        .spyOn(overlayBackground as any, "isTotpFieldForCurrentField")
+        .mockReturnValue(isTotpField);
+    };
+
+    it("returns every cipher when the focused field is not a verification code field", () => {
+      focusTotpField(false);
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-a";
+      const cipherEntries = buildCipherEntries(totpCipherA, totpCipherB);
+
+      const result = overlayBackground["restrictTotpCiphersToFilledCipher"](cipherEntries);
+
+      expect(result).toEqual(cipherEntries);
+    });
+
+    it("returns every cipher when no cipher has been filled on the tab", () => {
+      focusTotpField(true);
+      const cipherEntries = buildCipherEntries(totpCipherA, totpCipherB);
+
+      const result = overlayBackground["restrictTotpCiphersToFilledCipher"](cipherEntries);
+
+      expect(result).toEqual(cipherEntries);
+    });
+
+    it("narrows the list to the cipher that filled the login on the tab", () => {
+      focusTotpField(true);
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-b";
+      const cipherEntries = buildCipherEntries(totpCipherA, totpCipherB);
+
+      const result = overlayBackground["restrictTotpCiphersToFilledCipher"](cipherEntries);
+
+      expect(result).toHaveLength(1);
+      expect(result[0][1]).toBe(totpCipherB);
+    });
+
+    it("returns every cipher when the filled cipher holds no totp secret", () => {
+      focusTotpField(true);
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-c";
+      const cipherEntries = buildCipherEntries(totpCipherA, totpCipherB, cipherWithoutTotp);
+
+      const result = overlayBackground["restrictTotpCiphersToFilledCipher"](cipherEntries);
+
+      expect(result).toEqual(cipherEntries);
+    });
+
+    it("returns every cipher when the filled cipher is absent from the current list", () => {
+      focusTotpField(true);
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-not-present";
+      const cipherEntries = buildCipherEntries(totpCipherA, totpCipherB);
+
+      const result = overlayBackground["restrictTotpCiphersToFilledCipher"](cipherEntries);
+
+      expect(result).toEqual(cipherEntries);
+    });
+
+    it("records the filled cipher id keyed by tab", () => {
+      overlayBackground["recordFilledCipherForTab"](totpTabId, totpCipherA);
+
+      expect(overlayBackground["lastFilledCipherIdForTab"][totpTabId]).toBe("cipher-a");
+    });
+
+    it("ignores a fill recorded without a tab id", () => {
+      overlayBackground["recordFilledCipherForTab"](undefined, totpCipherA);
+
+      expect(Object.keys(overlayBackground["lastFilledCipherIdForTab"])).toHaveLength(0);
+    });
+
+    it("keeps the recorded cipher across a top frame navigation", async () => {
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-a";
+
+      triggerWebNavigationOnCommittedEvent(
+        mock<chrome.webNavigation.WebNavigationFramedCallbackDetails>({
+          tabId: totpTabId,
+          frameId: 0,
+        }),
+      );
+      await flushPromises();
+
+      expect(overlayBackground["lastFilledCipherIdForTab"][totpTabId]).toBe("cipher-a");
+    });
+
+    it("drops the recorded cipher when the tab is closed", async () => {
+      overlayBackground["lastFilledCipherIdForTab"][totpTabId] = "cipher-a";
+
+      triggerTabOnRemovedEvent(totpTabId, mock<chrome.tabs.OnRemovedInfo>());
+      await flushPromises();
+
+      expect(overlayBackground["lastFilledCipherIdForTab"][totpTabId]).toBe(undefined);
     });
   });
 

@@ -167,6 +167,13 @@ export class OverlayBackground implements OverlayBackgroundInterface {
   private inlineMenuListPort: chrome.runtime.Port | null = null;
   private inlineMenuListMessageConnectorPort: chrome.runtime.Port | null = null;
   private inlineMenuCiphers: Map<string, CipherView> = new Map();
+  /**
+   * Real cipher ids (not the volatile `inline-menu-cipher-N` keys) of the cipher most recently
+   * used to autofill within a given tab. Used to narrow the verification-code inline menu to the
+   * cipher the user actually logged in with. Deliberately NOT cleared on navigation, because the
+   * login form and the 2FA prompt are usually separate page loads.
+   */
+  private lastFilledCipherIdForTab: Record<number, string> = {};
   private inlineMenuFido2Credentials: Set<string> = new Set();
   private inlineMenuPageTranslations: Record<string, string> | null = null;
   private inlineMenuPosition: InlineMenuPosition = {};
@@ -645,8 +652,8 @@ export class OverlayBackground implements OverlayBackgroundInterface {
       firstValueFrom(this.environmentService.environment$),
     ]);
     const iconsServerUrl: string | null = env.getIconsUrl() ?? null;
-    const inlineMenuCiphersArray = this.filterInlineMenuCiphersBySearchText(
-      Array.from(this.inlineMenuCiphers),
+    const inlineMenuCiphersArray = this.restrictTotpCiphersToFilledCipher(
+      this.filterInlineMenuCiphersBySearchText(Array.from(this.inlineMenuCiphers)),
     );
     let inlineMenuCipherData: InlineMenuCipherData[];
     this.showPasskeysLabelsWithinInlineMenu = false;
@@ -1572,6 +1579,7 @@ export class OverlayBackground implements OverlayBackgroundInterface {
         await this.authenticatePasskeyCredential(sender, credentialId);
       }
       this.updateLastUsedInlineMenuCipher(inlineMenuCipherId, cipher);
+      this.recordFilledCipherForTab(tabId, cipher);
 
       if (cipher.login?.totp) {
         const totpResponse = await firstValueFrom(this.totpService.getCode$(cipher.login.totp));
@@ -1624,6 +1632,7 @@ export class OverlayBackground implements OverlayBackgroundInterface {
     }
 
     this.updateLastUsedInlineMenuCipher(inlineMenuCipherId, cipher);
+    this.recordFilledCipherForTab(tabId, cipher);
   }
 
   /**
@@ -1715,6 +1724,58 @@ export class OverlayBackground implements OverlayBackgroundInterface {
    */
   private updateLastUsedInlineMenuCipher(inlineMenuCipherId: string, cipher: CipherView) {
     this.inlineMenuCiphers = new Map([[inlineMenuCipherId, cipher], ...this.inlineMenuCiphers]);
+  }
+
+  /**
+   * Records the real id of the cipher that was just used to autofill within a tab, so a
+   * subsequent verification-code field on that tab can be narrowed to the same cipher.
+   *
+   * @param tabId - The tab the fill occurred in
+   * @param cipher - The cipher that was filled
+   */
+  private recordFilledCipherForTab(tabId: number | undefined, cipher: CipherView) {
+    if (tabId === null || tabId === undefined || !cipher.id) {
+      return;
+    }
+
+    this.lastFilledCipherIdForTab[tabId] = cipher.id;
+  }
+
+  /**
+   * Narrows the ciphers offered for a verification-code field to the cipher that was actually
+   * used to autofill the login on the current tab. This keeps the inline menu from presenting
+   * several interchangeable "Fill verification code" rows when a site has multiple TOTP-bearing
+   * ciphers.
+   *
+   * Falls back to the unrestricted list whenever the restriction cannot be applied confidently,
+   * so the user is never left without a reachable code. That covers landing directly on a 2FA
+   * page with an existing session, filling the login by hand, the service worker restarting
+   * between the two pages, and the filled cipher not being the one that holds the TOTP secret.
+   *
+   * @param inlineMenuCiphersArray - Array of inline menu ciphers
+   */
+  private restrictTotpCiphersToFilledCipher(
+    inlineMenuCiphersArray: [string, CipherView][],
+  ): [string, CipherView][] {
+    if (!this.isTotpFieldForCurrentField()) {
+      return inlineMenuCiphersArray;
+    }
+
+    const tabId = this.focusedFieldData?.tabId;
+    if (tabId === null || tabId === undefined) {
+      return inlineMenuCiphersArray;
+    }
+
+    const filledCipherId = this.lastFilledCipherIdForTab[tabId];
+    if (!filledCipherId) {
+      return inlineMenuCiphersArray;
+    }
+
+    const restrictedCiphers = inlineMenuCiphersArray.filter(
+      ([, cipher]) => cipher.id === filledCipherId && !!cipher.login?.totp,
+    );
+
+    return restrictedCiphers.length > 0 ? restrictedCiphers : inlineMenuCiphersArray;
   }
 
   /**
@@ -3567,6 +3628,7 @@ export class OverlayBackground implements OverlayBackgroundInterface {
     BrowserApi.messageListener("overlay.background", this.handleExtensionMessage);
     BrowserApi.addListener(chrome.webNavigation.onCommitted, this.handleWebNavigationOnCommitted);
     BrowserApi.addListener(chrome.runtime.onConnect, this.handlePortOnConnect);
+    BrowserApi.addListener(chrome.tabs.onRemoved, this.handleTabOnRemovedForFilledCipher);
 
     this.messageListener
       .messages$(RETRY_WHEN_UNLOCK_COMPLETED)
@@ -3575,6 +3637,17 @@ export class OverlayBackground implements OverlayBackgroundInterface {
         this.unlockCompleted(data).catch((error) => this.logService.error(error));
       });
   }
+
+  /**
+   * Drops the recorded filled cipher for a closed tab. Handled here rather than in
+   * `removePageDetails`, which also runs on top-frame navigation — the record has to survive the
+   * login page to 2FA page transition.
+   *
+   * @param tabId - The id of the tab that was removed
+   */
+  private handleTabOnRemovedForFilledCipher = (tabId: number) => {
+    delete this.lastFilledCipherIdForTab[tabId];
+  };
 
   /**
    * Handles extension messages sent to the extension background.
