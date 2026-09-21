@@ -156,7 +156,7 @@ export const DefaultFeatureFlagValue = {
   [FeatureFlag.UseUndeterminedCipherScenarioTriggeringLogic]: FALSE,
   [FeatureFlag.DefaultPasswordManagerPrompt]: FALSE,
   [FeatureFlag.LitInlineMenuComponents]: FALSE,
-  [FeatureFlag.InlineMenuTypedSearch]: FALSE,
+  [FeatureFlag.InlineMenuTypedSearch]: true, // TEMP(local): force-enabled for testing typed inline-menu search. Revert to FALSE before committing.
   [FeatureFlag.PM31039ItemActionInExtension]: FALSE,
   [FeatureFlag.EnableBasicAuthResponse]: FALSE,
 

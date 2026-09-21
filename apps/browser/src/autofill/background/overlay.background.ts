@@ -670,11 +670,14 @@ export class OverlayBackground implements OverlayBackgroundInterface {
   }
 
   /**
-   * Filters the inline menu ciphers by the text the user has typed into a login username
-   * field. Ciphers are matched case-insensitively against the labels the inline menu list
-   * renders for a login cipher: the cipher name, the login username, and the passkey
-   * username. Returns the unfiltered ciphers when no search text is present or the
-   * focused field is not a login field.
+   * Filters and sorts the inline menu ciphers by the text the user has typed into a login
+   * username field. Ciphers are matched case-insensitively against the labels the inline
+   * menu list renders for a login cipher: the cipher name, the login username, and the
+   * passkey username. Matches are ordered by relevance so the closest matches surface at
+   * the top of the list: exact matches first, then prefix matches, then substring matches.
+   * Ciphers that share a relevance rank keep their original relative order. Returns the
+   * unfiltered ciphers when no search text is present or the focused field is not a login
+   * field.
    *
    * @param inlineMenuCiphersArray - Array of inline menu ciphers
    */
@@ -686,9 +689,48 @@ export class OverlayBackground implements OverlayBackgroundInterface {
       return inlineMenuCiphersArray;
     }
 
-    return inlineMenuCiphersArray.filter(([, cipher]) =>
-      this.getInlineMenuCipherSearchValues(cipher).some((value) => value.includes(searchText)),
-    );
+    return inlineMenuCiphersArray
+      .map(
+        (entry, index) =>
+          [entry, this.getInlineMenuCipherSearchRank(entry[1], searchText), index] as const,
+      )
+      .filter(([, rank]) => rank !== null)
+      .sort((a, b) => a[1] - b[1] || a[2] - b[2])
+      .map(([entry]) => entry);
+  }
+
+  /**
+   * Scores a cipher against the typed search text for relevance ordering within the inline
+   * menu list. A lower score is a stronger match. Returns `null` when the cipher does not
+   * match, so it can be filtered out.
+   *
+   * Ranking (best to worst):
+   *   0 - a search value exactly equals the search text
+   *   1 - a search value starts with the search text (prefix match)
+   *   2 - a search value contains the search text (substring match)
+   *
+   * @param cipher - The cipher to score
+   * @param searchText - The lower-cased, trimmed text the user has typed
+   */
+  private getInlineMenuCipherSearchRank(cipher: CipherView, searchText: string): number | null {
+    let bestRank: number | null = null;
+
+    for (const value of this.getInlineMenuCipherSearchValues(cipher)) {
+      let rank: number | null = null;
+      if (value === searchText) {
+        rank = 0;
+      } else if (value.startsWith(searchText)) {
+        rank = 1;
+      } else if (value.includes(searchText)) {
+        rank = 2;
+      }
+
+      if (rank !== null && (bestRank === null || rank < bestRank)) {
+        bestRank = rank;
+      }
+    }
+
+    return bestRank;
   }
 
   /**
