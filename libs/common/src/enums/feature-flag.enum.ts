@@ -142,7 +142,7 @@ export const DefaultFeatureFlagValue = {
   [FeatureFlag.UseUndeterminedCipherScenarioTriggeringLogic]: FALSE,
   [FeatureFlag.DefaultPasswordManagerPrompt]: FALSE,
   [FeatureFlag.LitInlineMenuComponents]: FALSE,
-  [FeatureFlag.InlineMenuTypedSearch]: FALSE,
+  [FeatureFlag.InlineMenuTypedSearch]: true, // TEMP(local): enabled for local Firefox temp add-on. Do NOT commit — revert to FALSE before pushing.
   [FeatureFlag.EnableBasicAuthResponse]: FALSE,
 
   /* Desktop Native */
